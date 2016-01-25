@@ -5,10 +5,9 @@
             :url "http://www.eclipse.org/legal/epl-v10.html"}
   :dependencies [[org.clojure/clojure "1.8.0"]
                  [org.clojure/core.async "0.2.374"]
-                 [org.lwjgl/lwjgl "3.0.0b"]
-                 [org.lwjgl/lwjgl-platform "3.0.0b" :classifier "natives-osx"]]
+                 [org.lwjgl.lwjgl/lwjgl "2.9.3"]
+                 [org.lwjgl.lwjgl/lwjgl-platform "2.9.3" :classifier "natives-osx" :native-prefix ""]]
   :main ^:skip-aot cljgl.core
   :target-path "target/%s"
-  :jvm-opts ["-XstartOnFirstThread"] 
-  :aliases {"dumbrepl" ["trampoline" "run" "-m" "cljgl.core/-main"]}
+  :jvm-opts [] 
   :profiles {:uberjar {:aot :all}})
