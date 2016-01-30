@@ -1,28 +1,22 @@
 (ns cljgl.core
-  (:require [clojure.core.async :as a])
+  (:require [clojure.core.async :as a]
+            [cljgl.point :as p :refer [->Point2d]]
+            [cljgl.vector :as v :refer [->Vector2d]])
   (:import (org.lwjgl.opengl Display DisplayMode GL11)
            (org.lwjgl.input Keyboard)))
 
 (def context {:width 640
               :height 480})
 
-(defn vector-length
-  [[x y]]
-  (Math/sqrt (+ (* x x) (* y y))))
+(defn random-normalised-vector []
+  (let [rand-fn #(- (rand) 0.5)]
+    (v/normalise (->Vector2d (rand-fn) (rand-fn)))))
 
-(defn vector-normalise
-  [[x y :as v]]
-  (let [length (vector-length v)]
-    [(/ x length) (/ y length)]))
-
-(defn random-normalised-vector
-  []
-  (let [rand-fn #(- (rand))]
-    (vector-normalise [(rand-fn) (rand-fn)])))
+(defn random-colour [] [(rand) (rand) (rand)])
 
 (defn random-bird
   [{width :width, height :height}]
-  {:position [(* (rand) width) (* (rand) height)]
+  {:position (->Point2d (* (rand) width) (* (rand) height))
    :velocity (random-normalised-vector)
    :colour [(rand) (rand) (rand)]})
 
@@ -38,8 +32,7 @@
   (GL11/glMatrixMode GL11/GL_MODELVIEW)
   #_(GL11/glClearColor 0 0 0))
 
-(defn shutdown-display []
-  (Display/destroy))
+(defn shutdown-display [] (Display/destroy))
 
 (defn map!
   [f coll]
@@ -52,23 +45,50 @@
             (recur (inc idx)))))))
 
 (defn bounce
-  [{width :width, height :height} {[px py] :position, [vx vy] :velocity, :as bird}]
-  (let [new-velocity (cond
-                       (> 0 px) [(Math/abs vx) vy]
-                       (> 0 py) [vx (Math/abs vy)]
-                       (< width px) [(- (Math/abs vx)) vy]
-                       (< height py) [vx (- (Math/abs vy))]
-                       :else [vx vy])]
+  [{w :width, h :height} {{px :x, py :y} :position, {vx :x, vy :y} :velocity, :as bird}]
+  (let [new-velocity (apply ->Vector2d
+                            (cond
+                              (< px 0) [(Math/abs vx) vy]
+                              (< py 0) [vx (Math/abs vy)]
+                              (> px w) [(- (Math/abs vx)) vy]
+                              (> py h) [vx (- (Math/abs vy))]
+                              :else [vx vy]))]
     (assoc bird :velocity new-velocity)))
 
+(defn distance
+  [{b1-position :position} {b2-position :position}]
+  (p/distance b1-position b2-position))
+
+(defn neighbours [max-distance birds bird]
+  (filter #(< (distance bird %) max-distance) birds))
+
+(defn aligned-vector [vectors]
+  (->> vectors
+       (reduce v/add (->Vector2d 0.00001 0.00001))
+       v/normalise))
+
+(defn cohesed-vector [birds {{x :x, y :y} :position}] nil)
+
+(defn flock [birds bird]
+  (assoc bird :velocity (->> (neighbours 50 birds bird)
+                             (map :velocity)
+                             aligned-vector
+
+                             (v/add (:velocity bird))
+                             v/normalise)))
+
 (defn new-position
-  [context delta {[px py] :position, [vx vy] :velocity, :as bird}]
-  (let [calculated-position [(+ px (* delta vx)) (+ py (* delta vy))]]
+  [context delta {{px :x, py :y} :position, {vx :x, vy :y} :velocity, :as bird}]
+  (let [new-x (+ px (* delta vx))
+        new-y (+ py (* delta vy))
+        calculated-position (->Point2d new-x new-y)]
     (assoc bird :position calculated-position)))
 
-(defn update-frame! [context delta birds]
+(defn update-frame!
+  [context delta birds]
   (swap! birds (fn [birds]
                  (let [update-fn (comp (partial bounce context)
+                                       (partial flock birds)
                                        (partial new-position context (* delta 200)))]
                    (map! update-fn birds)))))
 
@@ -81,7 +101,7 @@
       (update-frame! context delta birds)
       (recur this-time))))
 
-(defn render-bird [{[x y] :position, [vx vy] :velocity, [r g b] :colour}]
+(defn render-bird [{{x :x, y :y} :position, {vx :x, vy :y} :velocity, [r g b] :colour}]
   (GL11/glPushMatrix)
   (GL11/glTranslatef x y 0)
   (GL11/glRotatef (Math/toDegrees (Math/atan2 vx (- vy))) 0 0 1)
