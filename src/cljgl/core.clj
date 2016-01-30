@@ -1,24 +1,24 @@
 (ns cljgl.core
-  (:require [clojure.core.async :as a]
-            [cljgl.point :as p :refer [->Point2d]]
+  (:require [cljgl.point :as p :refer [->Point2d]]
             [cljgl.vector :as v :refer [->Vector2d]])
   (:import (org.lwjgl.opengl Display DisplayMode GL11)
            (org.lwjgl.input Keyboard)))
 
-(def context {:width 640
-              :height 480})
+(def context {:width 1024 
+              :height 768})
 
 (defn random-normalised-vector []
   (let [rand-fn #(- (rand) 0.5)]
     (v/normalise (->Vector2d (rand-fn) (rand-fn)))))
 
-(defn random-colour [] [(rand) (rand) (rand)])
+(defn random-colour []
+  (let [rand-fn #(+ (* (rand) (- 1 %1)) %1)] [(rand-fn 0.2) (rand-fn 0.5) (rand-fn 0.8)]))
 
 (defn random-bird
   [{width :width, height :height}]
   {:position (->Point2d (* (rand) width) (* (rand) height))
    :velocity (random-normalised-vector)
-   :colour [(rand) (rand) (rand)]})
+   :colour (random-colour)})
 
 (def birds (atom (take 20 (repeatedly (partial random-bird context)))))
 
@@ -60,22 +60,43 @@
   (p/distance b1-position b2-position))
 
 (defn neighbours [max-distance birds bird]
-  (filter #(< (distance bird %) max-distance) birds))
+  (filter (partial not= bird) (filter #(< (distance bird %) max-distance) birds)))
 
-(defn aligned-vector [vectors]
-  (->> vectors
+(defn aligned-vector [birds]
+  (->> birds
+       (map :velocity)
        (reduce v/add (->Vector2d 0.00001 0.00001))
        v/normalise))
 
-(defn cohesed-vector [birds {{x :x, y :y} :position}] nil)
+(defn cohesed-vector [{{x :x, y :y} :position} birds]
+  (let [[com-x com-y] (reduce (fn [[ax ay] {{bx :x, by :y} :position}] [(+ ax bx ) (+ ay by)]) [0 0] birds)
+        bird-count (count birds)
+        coh-x (/ com-x bird-count)
+        coh-y (/ com-y bird-count)]
+    (v/normalise (->Vector2d (- coh-x x) (- coh-y y)))))
+
+(defn separated-vector [{{x :x, y :y} :position} birds]
+  (let [[com-x com-y] (reduce (fn [[ax ay] {{bx :x, by :y} :position}] [(+ ax (- bx x) ) (+ ay (- by y))]) [0 0] birds)
+        bird-count (count birds)
+        sep-x (/ com-x bird-count)
+        sep-y (/ com-y bird-count)]
+    (v/normalise (->Vector2d (- sep-x) (- sep-y)))))
+
+(def original-weight 50)
+(def align-weight 0.05)
+(def cohesion-weight 5.45)
+(def separation-weight 4.75)
 
 (defn flock [birds bird]
-  (assoc bird :velocity (->> (neighbours 50 birds bird)
-                             (map :velocity)
-                             aligned-vector
-
-                             (v/add (:velocity bird))
-                             v/normalise)))
+  (let [local-birds (neighbours 300 birds bird)
+        aligned-vec (aligned-vector local-birds)
+        cohesed-vec (cohesed-vector bird local-birds)
+        separated-vec (separated-vector bird local-birds)] 
+    (assoc bird :velocity (->> (v/scale (:velocity bird) original-weight)
+                               (v/add (v/scale aligned-vec align-weight))
+                               (v/add (v/scale cohesed-vec cohesion-weight))
+                               (v/add (v/scale separated-vec separation-weight))
+                               v/normalise))))
 
 (defn new-position
   [context delta {{px :x, py :y} :position, {vx :x, vy :y} :velocity, :as bird}]
@@ -99,7 +120,7 @@
     (let [this-time (get-current-time)
           delta (/ (- this-time previous-time) 1000000000)]
       (update-frame! context delta birds)
-      (recur this-time))))
+      (if-not (Thread/interrupted) (recur this-time)))))
 
 (defn render-bird [{{x :x, y :y} :position, {vx :x, vy :y} :velocity, [r g b] :colour}]
   (GL11/glPushMatrix)
@@ -121,7 +142,7 @@
 
 (defn run-display-thread
   [{width :width, height :height, :as context} birds]
-  (a/thread
+  (future
     (init-2d-display width height "Clojure Flocking")
     (loop []
       (render context birds)
@@ -131,12 +152,12 @@
 
 (defn run-update-thread
   [context birds]
-  (a/thread (update-thread context birds)))
+  (future(update-thread context birds)))
 
 (defn main []
   (let [display-thread (run-display-thread context birds)
-        update-thread (run-update-thread context birds)
-        threads [display-thread update-thread]]
-    (a/alts!! threads)))
+        update-thread (run-update-thread context birds)]
+    @display-thread
+    (future-cancel update-thread)))
 
 (defn -main [])

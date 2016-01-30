@@ -17,4 +17,6 @@
     (is (= 5.0 (length (->Vector2d 3 4)))))
   
   (testing "it returns a normalised Vector2d"
-    (is (= 1.0 (-> (->Vector2d 3 4) normalise length)))))
+    (is (= 1.0 (-> (->Vector2d 3 4) normalise length))))
+  (testing "it scales a Vector2d"
+    (is (= (->Vector2d 7 14) (scale (->Vector2d 1 2) 7)))))

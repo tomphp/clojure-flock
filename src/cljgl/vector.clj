@@ -4,7 +4,8 @@
 (defprotocol Vector
   (add [this other])
   (length [this])
-  (normalise [this]))
+  (normalise [this])
+  (scale [this amount])) 
 
 (defrecord Vector2d [x y]
   Vector
@@ -12,6 +13,8 @@
     (->Vector2d (+ ax bx) (+ ay by)))
   (length [{x :x, y :y}] (m/hyp-length x y))
   (normalise [{x :x, y :y, :as v}]
-   (let [len (length v)]
-     (->Vector2d (/ x len) (/ y len)))))
+    (let [len (length v)]
+      (->Vector2d (/ x len) (/ y len))))
+  (scale [{x :x, y :y} amount]
+    (->Vector2d (* x amount) (* y amount))))
 
