@@ -1,26 +1,20 @@
 (ns cljgl.core
   (:require [cljgl.point :as p :refer [->Point2d]]
-            [cljgl.vector :as v :refer [->Vector2d]])
+            [cljgl.vector :as v :refer [->Vector2d]]
+            [cljgl.random :as random])
   (:import (org.lwjgl.opengl Display DisplayMode GL11)
            (org.lwjgl.input Keyboard)))
 
 (def context {:width 1024 
               :height 768})
 
-(defn random-normalised-vector []
-  (let [rand-fn #(- (rand) 0.5)]
-    (v/normalise (->Vector2d (rand-fn) (rand-fn)))))
+(def original-weight 50)
+(def align-weight 0.05)
+(def cohesion-weight 5.45)
+(def separation-weight 4.75)
+(def neighbourhood 300)
 
-(defn random-colour []
-  (let [rand-fn #(+ (* (rand) (- 1 %1)) %1)] [(rand-fn 0.2) (rand-fn 0.5) (rand-fn 0.8)]))
-
-(defn random-bird
-  [{width :width, height :height}]
-  {:position (->Point2d (* (rand) width) (* (rand) height))
-   :velocity (random-normalised-vector)
-   :colour (random-colour)})
-
-(def birds (atom (take 20 (repeatedly (partial random-bird context)))))
+(def birds (atom (take 20 (repeatedly (partial random/bird context)))))
 
 (defn init-2d-display [width height title]
   (Display/setDisplayMode (DisplayMode. width height))
@@ -34,7 +28,7 @@
 
 (defn shutdown-display [] (Display/destroy))
 
-(defn map!
+(defn transient-map
   [f coll]
   (let [t-coll (transient (vec coll))
         size (count coll)]
@@ -82,13 +76,9 @@
         sep-y (/ com-y bird-count)]
     (v/normalise (->Vector2d (- sep-x) (- sep-y)))))
 
-(def original-weight 50)
-(def align-weight 0.05)
-(def cohesion-weight 5.45)
-(def separation-weight 4.75)
 
 (defn flock [birds bird]
-  (let [local-birds (neighbours 300 birds bird)
+  (let [local-birds (neighbours neighbourhood birds bird)
         aligned-vec (aligned-vector local-birds)
         cohesed-vec (cohesed-vector bird local-birds)
         separated-vec (separated-vector bird local-birds)] 
@@ -111,7 +101,7 @@
                  (let [update-fn (comp (partial bounce context)
                                        (partial flock birds)
                                        (partial new-position context (* delta 200)))]
-                   (map! update-fn birds)))))
+                   (transient-map update-fn birds)))))
 
 (defn get-current-time [] (System/nanoTime))
 
